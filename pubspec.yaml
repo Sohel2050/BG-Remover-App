@@ -1,0 +1,63 @@
+name: bg_remover_app
+description: "AI background remover app (Flutter, on-device, free)"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  rename_app: ^1.6.6
+  rename: ^3.1.0
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # AI inference (runs u2net.onnx on-device, free, offline)
+  flutter_onnxruntime: ^1.8.5
+
+  # Image handling
+  image_picker: ^1.1.2
+  image: ^4.2.0
+
+  # File system access (for saving temp/exported images)
+  path_provider: ^2.1.4
+
+  # Simple state management
+  provider: ^6.1.2
+
+  # Camera/gallery permissions
+  permission_handler: ^11.3.1
+
+  # Export: save to device gallery and share sheet
+  gal: ^2.3.0
+  share_plus: ^13.3.0
+
+  # App infrastructure: recent projects, settings persistence, i18n
+  shared_preferences: ^2.2.3
+  intl: ^0.20.2
+
+  # PDF export (multiple processed images into one PDF)
+  pdf: ^3.11.1
+
+  # Remote force-update check (fetches update_config.json from GitHub)
+  http: ^1.2.2
+  package_info_plus: ^10.2.2
+  url_launcher: ^6.3.1
+
+  # Unity LevelPlay ad mediation (banner/interstitial/rewarded/native)
+  unity_levelplay_mediation: ^9.2.0
+
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/models/

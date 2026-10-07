@@ -1,0 +1,12 @@
+// In android/app/build.gradle.kts, inside android { ... } block:
+
+android {
+    namespace = "com.albonik.bgremover"
+    compileSdk = 36   // onnxruntime's dependencies require compileSdk >= 34
+
+    defaultConfig {
+        applicationId = "com.albonik.bgremover"
+        minSdk = 24       // onnxruntime requires >= 24
+        targetSdk = 34
+    }
+}

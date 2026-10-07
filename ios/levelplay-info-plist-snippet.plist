@@ -1,0 +1,62 @@
+<!--
+  Add these keys inside the main <dict> of ios/Runner/Info.plist,
+  alongside the camera/photo-library keys already added there.
+-->
+
+<!-- App Tracking Transparency — most ad networks need this for
+     personalized ads; without it they fall back to non-personalized. -->
+<key>NSUserTrackingUsageDescription</key>
+<string>Your data is used to show you more relevant ads and support this free app.</string>
+
+<!-- Required so LevelPlay's (encrypted) network calls and some mediated
+     networks' calls aren't blocked by App Transport Security. -->
+<key>NSAppTransportSecurity</key>
+<dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true/>
+</dict>
+
+<!--
+  SKAdNetwork IDs — iOS 14+ requires listing every ad network's ID here.
+  Below are the ones independently confirmed from Unity's own published
+  table (docs.unity.com "Add SKAdNetwork IDs manually"): LevelPlay core,
+  AppLovin, Chartboost, Meta, Mintegral.
+
+  ⚠️ NOT included below (couldn't verify a correct ID, and a wrong/guessed
+  ID silently breaks attribution rather than erroring — worse than
+  leaving it out): InMobi, MobileFuse, Moloco, Ogury, PubMatic, Smaato,
+  Unity Ads, Verve, Yandex, Vungle.
+
+  Get the complete, current, correct list for ALL 13 networks at once
+  from Unity's official generator (pick your networks, it outputs the
+  exact <array> to paste in):
+  https://docs.unity.com/en-us/grow/levelplay/sdk/ios/add-skadnetwork-ids-manually
+-->
+<key>SKAdNetworkItems</key>
+<array>
+    <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>su67r6k2v3.skadnetwork</string> <!-- LevelPlay / ironSource -->
+    </dict>
+    <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>ludvb6z3bs.skadnetwork</string> <!-- AppLovin -->
+    </dict>
+    <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>f38h382jlk.skadnetwork</string> <!-- Chartboost -->
+    </dict>
+    <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>v9wttpbfk9.skadnetwork</string> <!-- Meta Audience Network -->
+    </dict>
+    <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>n38lu8286q.skadnetwork</string> <!-- Meta Audience Network (2nd ID) -->
+    </dict>
+    <dict>
+        <key>SKAdNetworkIdentifier</key>
+        <string>kbd757ywx3.skadnetwork</string> <!-- Mintegral -->
+    </dict>
+    <!-- Add the remaining 8 networks' IDs from the generator link above. -->
+</array>

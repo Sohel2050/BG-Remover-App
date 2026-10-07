@@ -1,0 +1,10 @@
+<!--
+  Add these two keys inside the main <dict> of ios/Runner/Info.plist
+  (this file is just a reference snippet, not a full Info.plist)
+-->
+<key>NSCameraUsageDescription</key>
+<string>Camera access is needed to take photos for background removal</string>
+<key>NSPhotoLibraryUsageDescription</key>
+<string>Photo library access is needed to select images for background removal</string>
+<key>NSPhotoLibraryAddUsageDescription</key>
+<string>Photo library access is needed to save your edited images</string>
