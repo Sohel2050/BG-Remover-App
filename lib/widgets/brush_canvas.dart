@@ -7,7 +7,7 @@ import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:path_provider/path_provider.dart';
 import '../services/prefs_service.dart';
 
-enum BrushMode { erase, restore }
+enum BrushMode { erase, restore, move }
 
 /// Background to composite behind the subject at export time — must match
 /// whatever the live preview is showing (see edit_screen.dart).
@@ -73,14 +73,10 @@ class BrushStroke {
 /// back in — via single-finger drag brush strokes. Two-finger gestures
 /// pinch-zoom and pan the canvas instead of drawing.
 ///
-/// Compositing order per frame (all inside one saveLayer for correct
-/// blending):
-///   1. For each RESTORE stroke: draw the ORIGINAL image through a soft
-///      (feathered) stencil shaped like that stroke's path.
-///   2. Draw the PROCESSED (background-removed) image on top, normally.
-///      Its transparent areas let step 1's restored content show through.
-///   3. For each ERASE stroke: punch a soft (feathered) transparent hole
-///      through everything drawn so far.
+/// Compositing: the processed image is the base; every stroke is then
+/// applied in the order it was made (erase punches a soft hole, restore
+/// paints the original back through a soft stencil), so a later restore
+/// can undo an earlier erase. In Move mode one finger pans the view.
 class BrushCanvas extends StatefulWidget {
   final File originalImageFile;
   final File processedImageFile;
@@ -135,6 +131,7 @@ class BrushCanvasState extends State<BrushCanvas> {
   Offset _gestureStartFocalPoint = Offset.zero;
   bool _isDrawingGesture = false;
   Size _widgetSize = Size.zero;
+  Offset? _cursor; // finger position (widget space) while drawing
 
   bool get isReady => _originalImage != null && _processedImage != null;
   List<BrushStroke> get strokes => List.unmodifiable(_strokes);
@@ -285,19 +282,20 @@ class BrushCanvasState extends State<BrushCanvas> {
     _gestureStartScale = _scale;
     _gestureStartPanOffset = _panOffset;
     _gestureStartFocalPoint = details.focalPoint;
-    _isDrawingGesture = details.pointerCount == 1;
+    _isDrawingGesture =
+        details.pointerCount == 1 && widget.mode != BrushMode.move;
 
     if (_isDrawingGesture) {
       HapticFeedback.selectionClick();
       _startDrawing(_toCanvasSpace(details.localFocalPoint));
-      setState(() {});
+      setState(() => _cursor = details.localFocalPoint);
     }
   }
 
   void _onScaleUpdate(ScaleUpdateDetails details) {
     if (details.pointerCount == 1 && _isDrawingGesture) {
       _extendDrawing(_toCanvasSpace(details.localFocalPoint));
-      setState(() {});
+      setState(() => _cursor = details.localFocalPoint);
       return;
     }
 
@@ -308,10 +306,11 @@ class BrushCanvasState extends State<BrushCanvas> {
       _currentPath = null;
       _lastPoint = null;
       _isDrawingGesture = false;
+      _cursor = null;
     }
 
     setState(() {
-      _scale = (_gestureStartScale * details.scale).clamp(0.5, 6.0);
+      _scale = (_gestureStartScale * details.scale).clamp(0.5, 10.0);
       _panOffset =
           _gestureStartPanOffset + (details.focalPoint - _gestureStartFocalPoint);
     });
@@ -320,12 +319,12 @@ class BrushCanvasState extends State<BrushCanvas> {
   void _onScaleEnd(ScaleEndDetails details) {
     if (_isDrawingGesture) {
       _endDrawing();
-      setState(() {});
+      setState(() => _cursor = null);
     }
     _isDrawingGesture = false;
   }
 
-  double get _featherSigma => widget.edgeSoftness.clamp(0.0, 1.0) * 18.0;
+  double get _featherSigma => widget.edgeSoftness.clamp(0.0, 1.0) * 12.0;
 
   @override
   Widget build(BuildContext context) {
@@ -341,7 +340,10 @@ class BrushCanvasState extends State<BrushCanvas> {
             onScaleStart: _onScaleStart,
             onScaleUpdate: _onScaleUpdate,
             onScaleEnd: _onScaleEnd,
-            child: Transform(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+            Transform(
               transform: Matrix4.identity()
                 ..translate(_panOffset.dx, _panOffset.dy)
                 ..scale(_scale),
@@ -353,9 +355,33 @@ class BrushCanvasState extends State<BrushCanvas> {
                   inProgress: _currentPath,
                   inProgressMode: widget.mode,
                   featherSigma: _featherSigma,
+                  inProgressBrush: widget.brushSize,
                 ),
                 size: Size.infinite,
               ),
+            ),
+                if (_cursor != null)
+                  Positioned(
+                    left: _cursor!.dx - widget.brushSize * _scale / 2,
+                    top: _cursor!.dy - widget.brushSize * _scale / 2,
+                    width: widget.brushSize * _scale,
+                    height: widget.brushSize * _scale,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: widget.mode == BrushMode.erase
+                                ? Colors.redAccent
+                                : Colors.greenAccent,
+                            width: 2,
+                          ),
+                          color: Colors.white24,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           );
         },
@@ -374,6 +400,7 @@ class BrushCanvasState extends State<BrushCanvas> {
     required BackgroundChoice background,
     Color solidColor = Colors.white,
     File? customBackgroundFile,
+    File? subjectOverride,
   }) async {
     final imageSize = Size(
       processedImageSize.width,
@@ -428,7 +455,13 @@ class BrushCanvasState extends State<BrushCanvas> {
           Paint()
             ..imageFilter = ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
         );
-        canvas.drawImageRect(_originalImage!, fullRect, fullRect, Paint());
+        canvas.drawImageRect(
+            _originalImage!,
+            Offset.zero &
+                Size(_originalImage!.width.toDouble(),
+                    _originalImage!.height.toDouble()),
+            fullRect,
+            Paint());
         canvas.restore();
         break;
       case BackgroundChoice.custom:
@@ -448,35 +481,44 @@ class BrushCanvasState extends State<BrushCanvas> {
 
     // Subject: same layered erase/restore/processed compositing as the
     // live preview, but 1:1 with the source image (srcRect == destRect).
-    final maskFilter = _featherSigma > 0
-        ? MaskFilter.blur(BlurStyle.normal, _featherSigma)
-        : null;
 
-    canvas.saveLayer(fullRect, Paint());
-    for (final stroke in imageSpaceStrokes) {
-      if (stroke.mode != BrushMode.restore) continue;
-      canvas.saveLayer(fullRect, Paint());
-      canvas.drawPath(
-        stroke.path,
-        Paint()
-          ..color = Colors.black
-          ..maskFilter = maskFilter,
-      );
+    if (subjectOverride != null) {
+      final codec =
+          await ui.instantiateImageCodec(await subjectOverride.readAsBytes());
+      final subj = (await codec.getNextFrame()).image;
       canvas.drawImageRect(
-        _originalImage!,
+        subj,
+        Offset.zero & Size(subj.width.toDouble(), subj.height.toDouble()),
         fullRect,
-        fullRect,
-        Paint()..blendMode = BlendMode.srcIn,
+        Paint()..filterQuality = FilterQuality.high,
       );
-      canvas.restore();
     }
-    canvas.drawImageRect(_processedImage!, fullRect, fullRect, Paint());
-    final erasePaint = Paint()
-      ..blendMode = BlendMode.clear
-      ..maskFilter = maskFilter;
-    for (final stroke in imageSpaceStrokes) {
-      if (stroke.mode != BrushMode.erase) continue;
-      canvas.drawPath(stroke.path, erasePaint);
+    canvas.saveLayer(fullRect, Paint());
+    if (subjectOverride == null) {
+      canvas.drawImageRect(_processedImage!, fullRect, fullRect,
+          Paint()..filterQuality = FilterQuality.high);
+    }
+    for (final stroke in subjectOverride != null
+        ? <BrushStroke>[]
+        : imageSpaceStrokes) {
+      final mf = _maskFor(_featherSigma * scaleX, stroke.brushSize * scaleX);
+      if (stroke.mode == BrushMode.erase) {
+        _softDraw(canvas, stroke.path, mf, BlendMode.dstOut);
+      } else if (stroke.mode == BrushMode.restore) {
+        canvas.saveLayer(fullRect, Paint());
+        _softDraw(canvas, stroke.path, mf, BlendMode.srcOver);
+        canvas.drawImageRect(
+          _originalImage!,
+          Offset.zero &
+              Size(_originalImage!.width.toDouble(),
+                  _originalImage!.height.toDouble()),
+          fullRect,
+          Paint()
+            ..blendMode = BlendMode.srcIn
+            ..filterQuality = FilterQuality.high,
+        );
+        canvas.restore();
+      }
     }
     canvas.restore();
 
@@ -497,10 +539,39 @@ class BrushCanvasState extends State<BrushCanvas> {
     return outFile;
   }
 
+  /// Current view reset helper kept above; returns the edited subject as a
+  /// transparent PNG at the processed image's resolution.
+  Future<File> bakeTransparent() =>
+      exportComposite(background: BackgroundChoice.transparent);
+
   Size get processedImageSize => Size(
         _processedImage!.width.toDouble(),
         _processedImage!.height.toDouble(),
       );
+}
+
+/// Feather blur capped relative to the brush so the stroke core stays solid.
+MaskFilter? _maskFor(double sigma, double brush) {
+  final s = sigma < brush * 0.15 ? sigma : brush * 0.15;
+  return s > 0.3 ? MaskFilter.blur(BlurStyle.normal, s) : null;
+}
+
+/// Draws a stroke path soft-edged with a guaranteed solid core.
+void _softDraw(Canvas canvas, Path path, MaskFilter? mf, BlendMode mode) {
+  final paint = Paint()
+    ..color = Colors.black
+    ..blendMode = mode;
+  if (mf == null) {
+    canvas.drawPath(path, paint);
+    return;
+  }
+  canvas.drawPath(path, paint..maskFilter = mf);
+  canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.black
+        ..blendMode = mode
+        ..maskFilter = mf);
 }
 
 class _BrushPainter extends CustomPainter {
@@ -510,8 +581,10 @@ class _BrushPainter extends CustomPainter {
   final Path? inProgress;
   final BrushMode inProgressMode;
   final double featherSigma;
+  final double inProgressBrush;
 
   _BrushPainter({
+    required this.inProgressBrush,
     required this.original,
     required this.processed,
     required this.strokes,
@@ -549,39 +622,31 @@ class _BrushPainter extends CustomPainter {
 
     canvas.saveLayer(Offset.zero & size, Paint());
 
-    // 1. Restore strokes: draw original image through a soft stencil.
-    final maskFilter = featherSigma > 0
-        ? MaskFilter.blur(BlurStyle.normal, featherSigma)
-        : null;
+    final filter = FilterQuality.medium;
 
+    // Base: processed image, then every stroke in the order it was made,
+    // so a later restore can bring back what an earlier erase removed.
+    canvas.drawImageRect(
+        processed, srcRect, destRect, Paint()..filterQuality = filter);
     for (final stroke in allStrokes) {
-      if (stroke.mode != BrushMode.restore) continue;
-      canvas.saveLayer(Offset.zero & size, Paint());
-      canvas.drawPath(
-        stroke.path,
-        Paint()
-          ..color = Colors.black
-          ..maskFilter = maskFilter,
-      );
-      canvas.drawImageRect(
-        original,
-        srcRect,
-        destRect,
-        Paint()..blendMode = BlendMode.srcIn,
-      );
-      canvas.restore();
-    }
-
-    // 2. Processed image on top (its transparent areas reveal step 1).
-    canvas.drawImageRect(processed, srcRect, destRect, Paint());
-
-    // 3. Erase strokes: punch soft transparent holes through everything.
-    final erasePaint = Paint()
-      ..blendMode = BlendMode.clear
-      ..maskFilter = maskFilter;
-    for (final stroke in allStrokes) {
-      if (stroke.mode != BrushMode.erase) continue;
-      canvas.drawPath(stroke.path, erasePaint);
+      final bs = stroke.brushSize > 0 ? stroke.brushSize : inProgressBrush;
+      final mf = _maskFor(featherSigma, bs);
+      if (stroke.mode == BrushMode.erase) {
+        _softDraw(canvas, stroke.path, mf, BlendMode.dstOut);
+      } else if (stroke.mode == BrushMode.restore) {
+        canvas.saveLayer(Offset.zero & size, Paint());
+        _softDraw(canvas, stroke.path, mf, BlendMode.srcOver);
+        canvas.drawImageRect(
+          original,
+          Offset.zero &
+              Size(original.width.toDouble(), original.height.toDouble()),
+          destRect,
+          Paint()
+            ..blendMode = BlendMode.srcIn
+            ..filterQuality = filter,
+        );
+        canvas.restore();
+      }
     }
 
     canvas.restore(); // finish outer saveLayer

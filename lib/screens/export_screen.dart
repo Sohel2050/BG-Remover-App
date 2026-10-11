@@ -4,6 +4,7 @@ import 'package:gal/gal.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/ads_service.dart';
 import '../widgets/checkerboard_background.dart';
+import '../widgets/levelplay_ads.dart';
 
 /// Final step: preview the exported PNG, then save it to the device
 /// gallery or share it via the OS share sheet.
@@ -111,6 +112,8 @@ class _ExportScreenState extends State<ExportScreen> {
               ],
             ),
           ),
+          const LevelPlayMrec(placementName: 'export_mrec'),
+          const SizedBox(height: 16),
         ],
       ),
     );

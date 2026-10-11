@@ -24,19 +24,15 @@ class ImageService {
 
     final XFile? shot = await _picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 95,
     );
     if (shot == null) return null;
     return File(shot.path);
   }
 
   Future<File?> pickFromGallery() async {
-    final granted = await requestGalleryPermission();
-    if (!granted) return null;
-
+    // The system photo picker needs no storage permission.
     final XFile? picked = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 95,
     );
     if (picked == null) return null;
     return File(picked.path);

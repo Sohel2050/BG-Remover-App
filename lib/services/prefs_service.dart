@@ -30,7 +30,6 @@ class RecentProject {
 /// rolling list of recent projects.
 class PrefsService {
   static const _keyThemeMode = 'theme_mode'; // 'system' | 'light' | 'dark'
-  static const _keyLocale = 'locale_code'; // 'en' | 'bn'
   static const _keyOnboardingDone = 'onboarding_done';
   static const _keyRecentProjects = 'recent_projects';
   static const _maxRecent = 20;
@@ -43,16 +42,6 @@ class PrefsService {
   Future<void> setThemeMode(String mode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyThemeMode, mode);
-  }
-
-  Future<String> getLocaleCode() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyLocale) ?? 'en';
-  }
-
-  Future<void> setLocaleCode(String code) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyLocale, code);
   }
 
   Future<bool> isOnboardingDone() async {

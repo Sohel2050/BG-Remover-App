@@ -1,12 +1,15 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show Offset;
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 import 'package:image/image.dart' as img;
-import 'color_space_utils.dart';
+import 'image_decode.dart';
+import 'image_ops.dart';
 import 'package:path_provider/path_provider.dart';
 import 'tool_utils.dart';
+import 'model_store.dart';
 
 /// One brush stroke painted over the object to remove. Coordinates are
 /// normalized to the image (0..1) so they're independent of screen size.
@@ -28,18 +31,13 @@ class MaskStroke {
 /// inpaint that crop, and blend only the masked pixels back — so the rest
 /// of the photo keeps its full original quality.
 class InpaintService {
-  static const String _asset = 'assets/models/lama_fp32.onnx';
   static const int _size = 512;
 
   final OnnxRuntime _ort = OnnxRuntime();
   OrtSession? _session;
 
   Future<void> loadModel() async {
-    _session ??= await ToolUtils.loadSession(
-      _ort,
-      _asset,
-      hint: 'See assets/models/MODELS_SETUP.md (LaMa).',
-    );
+    _session ??= await ModelStore.load(_ort, ModelStore.lama);
   }
 
   Future<File> removeObjects(File input, List<MaskStroke> strokes) async {
@@ -49,9 +47,7 @@ class InpaintService {
     await loadModel();
     final session = _session!;
 
-    final decoded0 = img.decodeImage(await input.readAsBytes());
-    if (decoded0 == null) throw Exception('Could not decode image');
-    final photo = ColorSpaceUtils.normalizeToSrgb(img.bakeOrientation(decoded0));
+    final photo = await ImageDecode.fromFile(input, maxSide: 4096);
     final W = photo.width;
     final H = photo.height;
 
@@ -73,9 +69,10 @@ class InpaintService {
     minY = minY.clamp(0, H.toDouble()).toDouble();
     maxY = maxY.clamp(0, H.toDouble()).toDouble();
 
-    // 2. Square crop around it, with generous context (2x the painted area).
-    double side = math.max(maxX - minX, maxY - minY) * 2.0;
-    side = math.max(side, 256);
+    // 2. Square crop around it, with generous context (1.8x the painted area).
+    // A tighter crop keeps the model closer to 1:1, so the fill stays sharper.
+    double side = math.max(maxX - minX, maxY - minY) * 1.8;
+    side = math.max(side, 320);
     side = math.min(side, math.min(W, H).toDouble());
     final sideI = side.round();
     final cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
@@ -117,8 +114,8 @@ class InpaintService {
       }
     }
     // LaMa works best when the mask fully covers the object's edges.
-    final dilated = ToolUtils.dilate(mask, _size, _size, 6);
-    final feather = ToolUtils.boxBlur(dilated, _size, _size, 4);
+    final dilated = ToolUtils.dilate(mask, _size, _size, 5);
+    final feather = ToolUtils.boxBlur(dilated, _size, _size, 3);
 
     // 4. Preprocess the crop.
     final crop = img.copyCrop(photo, x: x0, y: y0, width: sideI, height: sideI);
@@ -178,50 +175,29 @@ class InpaintService {
     }
     final mul = maxV <= 2.0 ? 255.0 : 1.0;
 
-    final filled512 = img.Image(width: _size, height: _size, numChannels: 3);
-    for (int y = 0; y < _size; y++) {
-      for (int x = 0; x < _size; x++) {
-        final i = y * _size + x;
-        filled512.setPixelRgb(
-          x,
-          y,
-          (flat[i] * mul).clamp(0, 255),
-          (flat[plane + i] * mul).clamp(0, 255),
-          (flat[2 * plane + i] * mul).clamp(0, 255),
-        );
-      }
-    }
-    final filled = img.copyResize(
-      filled512,
-      width: sideI,
-      height: sideI,
-      interpolation: img.Interpolation.cubic,
+    // Resize the patch and blend it back in a background isolate (this is
+    // the slow part on big photos).
+    final rgb = ImageDecode.rgbBytes(photo);
+    final jpg = await Isolate.run(
+      () => blendInpaintJpg(
+        rgb,
+        W,
+        H,
+        flat,
+        mul,
+        feather,
+        x0,
+        y0,
+        sideI,
+        _size,
+      ),
     );
-
-    // 6. Blend only the painted (feathered) area back into the photo.
-    for (int yy = 0; yy < sideI; yy++) {
-      final my = math.min(_size - 1, (yy * _size / sideI).floor());
-      for (int xx = 0; xx < sideI; xx++) {
-        final mx = math.min(_size - 1, (xx * _size / sideI).floor());
-        final a = feather[my * _size + mx];
-        if (a <= 0.01) continue;
-        final f = filled.getPixel(xx, yy);
-        final o = photo.getPixel(x0 + xx, y0 + yy);
-        photo.setPixelRgb(
-          x0 + xx,
-          y0 + yy,
-          o.r * (1 - a) + f.r * a,
-          o.g * (1 - a) + f.g * a,
-          o.b * (1 - a) + f.b * a,
-        );
-      }
-    }
 
     final dir = await getTemporaryDirectory();
     final out = File(
       '${dir.path}/inpaint_${DateTime.now().millisecondsSinceEpoch}.jpg',
     );
-    await out.writeAsBytes(img.encodeJpg(photo, quality: 95));
+    await out.writeAsBytes(jpg);
     return out;
   }
 

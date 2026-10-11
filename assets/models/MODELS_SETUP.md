@@ -1,5 +1,10 @@
 # Models for the AI Tools screen (Object Removal, Upscale, Select Subjects)
 
+**Auto-download:** `isnet-general-use.onnx` / `u2net.onnx` (background
+removal), `lama_fp32.onnx`, `esrgan_x4.onnx` and `yolov8m-seg.onnx` are
+downloaded automatically the first time they are used. Bundling a file in
+`assets/models/` skips its download.
+
 Same story as u2net.onnx and sky_seg.onnx: these are binary files, too
 large to write out directly. Download each, drop it in `assets/models/`
 with the exact filename below, then `flutter pub get` again.
@@ -25,14 +30,18 @@ https://huggingface.co/Saimon8420/realesr-general-x4v3-web/resolve/main/realesr-
 BSD-3-Clause license (Real-ESRGAN, Xintao Wang et al.). Rename whichever
 you pick to `esrgan_x4.onnx`.
 
-## 3. Select Subjects → `yolov8n-seg.onnx`
-Export it yourself with the free `ultralytics` Python package (no
-account/payment needed):
-```bash
-pip install ultralytics
-yolo export model=yolov8n-seg.pt format=onnx imgsz=640
+## 3. Select Subjects → `yolov8m-seg.onnx`
+Downloaded automatically on first use (~105MB). To bundle it instead,
+download one of these and put it in `assets/models/`:
 ```
-This produces `yolov8n-seg.onnx` (~13MB) — copy it into `assets/models/`.
+https://huggingface.co/unileon-robotics/YOLO8-ONNX/resolve/main/yolov8m-seg.onnx
+```
+Smaller option (~14MB, rougher masks): `yolov8n-seg.onnx` from the same
+repo. If you use it, change the `yolo` entry in
+`lib/services/model_store.dart` to that file name.
+
+Both are Ultralytics YOLOv8 exports at 640x640 (output `1x116x8400` and
+`1x32x160x160`), which is what `subject_detection_service.dart` expects.
 AGPL-3.0 license (Ultralytics) — fine for personal/free use; check the
 license terms if you plan to distribute the app commercially.
 

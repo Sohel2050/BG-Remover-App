@@ -71,3 +71,15 @@
 # Google Play Services (ad id / appset — used by the LevelPlay plugin)
 -keep class com.google.android.gms.ads.identifier.** { *; }
 -keep class com.google.android.gms.appset.** { *; }
+
+# --- AndroidX WorkManager / Room (used by ad SDKs) ---
+# Without these, R8 removes the generated WorkDatabase_Impl and the app
+# crashes at startup: "Failed to create an instance of class
+# androidx.work.impl.WorkDatabase".
+-keep class androidx.work.** { *; }
+-keep class androidx.room.** { *; }
+-keep class * extends androidx.room.RoomDatabase { *; }
+-keep @androidx.room.Database class * { *; }
+-keep class androidx.startup.** { *; }
+-dontwarn androidx.work.**
+-dontwarn androidx.room.**

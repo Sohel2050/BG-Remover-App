@@ -99,7 +99,7 @@ Home
  ├─ Batch Process Multiple Images (auto-remove only, save all)
  ├─ Collage Maker (combine 2-6 processed images into a grid)
  ├─ Recent Projects (thumbnail history)
- └─ Settings (theme: system/light/dark, language: English/বাংলা)
+ └─ Settings (theme: system/light/dark)
 
 First launch → 3-page Onboarding intro before Home.
 ```
@@ -240,4 +240,4 @@ can sanity-check it in the same order it was built:
 5. Export → Refine (try a rotate, a preset, a filter) → Export screen →
    Save/Share
 6. Try Batch Process and Collage Maker from Home
-7. Check Settings (dark mode, বাংলা) and Recent Projects
+7. Check Settings (dark mode) and Recent Projects

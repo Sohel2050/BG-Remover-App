@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../services/upscale_service.dart';
 import '../widgets/tool_error.dart';
+import '../widgets/levelplay_ads.dart';
 import 'export_screen.dart';
 
 class UpscaleScreen extends StatefulWidget {
@@ -65,9 +66,13 @@ class _UpscaleScreenState extends State<UpscaleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tooBig = _size != null &&
-        (_size!.width > UpscaleService.maxInputSide ||
-            _size!.height > UpscaleService.maxInputSide);
+    final work = _size == null
+        ? null
+        : UpscaleService.workingSize(_size!.width.toInt(), _size!.height.toInt());
+    final shrunk = _size != null &&
+        work != null &&
+        (work.width != _size!.width.toInt() ||
+            work.height != _size!.height.toInt());
 
     return Scaffold(
       appBar: AppBar(
@@ -81,6 +86,9 @@ class _UpscaleScreenState extends State<UpscaleScreen> {
               child: const Text('Done'),
             ),
         ],
+      ),
+      bottomNavigationBar: const SafeArea(
+        child: LevelPlayBanner(placementName: 'upscale_banner'),
       ),
       body: Column(
         children: [
@@ -102,21 +110,21 @@ class _UpscaleScreenState extends State<UpscaleScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (_size != null)
+                  if (work != null)
                     Text(
                       _result == null
-                          ? 'Current: ${_size!.width.toInt()}×${_size!.height.toInt()}  →  '
-                              '${(_size!.width * 4).toInt()}×${(_size!.height * 4).toInt()}'
-                          : 'Done: ${(_size!.width * 4).toInt()}×${(_size!.height * 4).toInt()}',
+                          ? 'Working size: ${work.width}×${work.height}  →  '
+                              '${work.width * 4}×${work.height * 4}'
+                          : 'Done: ${work.width * 4}×${work.height * 4}',
                     ),
-                  if (tooBig)
+                  if (shrunk)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
-                        'Works on images up to ${UpscaleService.maxInputSide}px on the longest side.',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                        ),
+                        'Large photo: it is resized to fit '
+                        '${UpscaleService.maxInputSide}px first, then upscaled 4×.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                        textAlign: TextAlign.center,
                       ),
                     ),
                   const SizedBox(height: 10),
@@ -128,7 +136,7 @@ class _UpscaleScreenState extends State<UpscaleScreen> {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: (_size == null || tooBig) ? null : _run,
+                        onPressed: _size == null ? null : _run,
                         icon: const Icon(Icons.hd),
                         label: Text(_result == null ? 'Upscale' : 'Run again'),
                       ),

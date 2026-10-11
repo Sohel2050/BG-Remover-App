@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/app_settings.dart';
 import '../services/ads_service.dart';
+import '../widgets/levelplay_ads.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -54,23 +55,6 @@ class SettingsScreen extends StatelessWidget {
             onChanged: (mode) => settings.setThemeMode(mode!),
           ),
           const Divider(),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Text('Language', style: TextStyle(fontWeight: FontWeight.bold)),
-          ),
-          RadioListTile<String>(
-            title: const Text('English'),
-            value: 'en',
-            groupValue: settings.locale.languageCode,
-            onChanged: (code) => settings.setLocale(Locale(code!)),
-          ),
-          RadioListTile<String>(
-            title: const Text('বাংলা (Bangla)'),
-            value: 'bn',
-            groupValue: settings.locale.languageCode,
-            onChanged: (code) => settings.setLocale(Locale(code!)),
-          ),
-          const Divider(),
           ListTile(
             leading: const Icon(Icons.favorite, color: Colors.redAccent),
             title: const Text('Support this free app'),
@@ -80,6 +64,9 @@ class SettingsScreen extends StatelessWidget {
               child: const Text('Watch'),
             ),
           ),
+          const SizedBox(height: 16),
+          const LevelPlayMrec(placementName: 'settings_mrec'),
+          const SizedBox(height: 16),
         ],
       ),
     );

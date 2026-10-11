@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import '../services/ai_service.dart';
 import '../services/pdf_export_service.dart';
 import '../widgets/checkerboard_background.dart';
+import '../widgets/levelplay_ads.dart';
 
 /// Batch mode: pick several images, run AI background removal on each
 /// automatically (no manual brush touch-up — that's the single-image flow
@@ -38,7 +39,7 @@ class _BatchScreenState extends State<BatchScreen> {
   }
 
   Future<void> _pickImages() async {
-    final picked = await ImagePicker().pickMultiImage(imageQuality: 95);
+    final picked = await ImagePicker().pickMultiImage();
     if (picked.isEmpty) return;
 
     setState(() {
@@ -198,6 +199,8 @@ class _BatchScreenState extends State<BatchScreen> {
                     label: Text('Export All ($doneCount) as PDF'),
                   ),
                 ),
+                const LevelPlayMrec(placementName: 'batch_mrec'),
+                const SizedBox(height: 8),
               ],
             ),
     );

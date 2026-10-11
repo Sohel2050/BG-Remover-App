@@ -1,10 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 
-/// Classic draggable before/after comparison slider.
-/// [before] and [after] should be same-aspect-ratio images (e.g. original
-/// photo vs. the background-removed result) — both are laid out identically
-/// via BoxFit.contain so the divider lines up correctly on both.
+/// Before/after comparison. The divider follows the finger directly
+/// (no drag-delta lag) and only the clipped layer repaints while moving.
 class BeforeAfterSlider extends StatefulWidget {
   final File before;
   final Widget after;
@@ -20,72 +18,76 @@ class BeforeAfterSlider extends StatefulWidget {
 }
 
 class _BeforeAfterSliderState extends State<BeforeAfterSlider> {
-  double _dividerFraction = 0.5; // 0 = all "after", 1 = all "before"
+  final ValueNotifier<double> _fraction = ValueNotifier<double>(0.5);
+
+  @override
+  void dispose() {
+    _fraction.dispose();
+    super.dispose();
+  }
+
+  void _setFrom(Offset local, double width) {
+    if (width <= 0) return;
+    _fraction.value = (local.dx / width).clamp(0.0, 1.0);
+  }
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth;
-        final dividerX = width * _dividerFraction;
-
-        return GestureDetector(
-          onHorizontalDragUpdate: (details) {
-            setState(() {
-              _dividerFraction =
-                  (dividerX + details.delta.dx) / width;
-              _dividerFraction = _dividerFraction.clamp(0.0, 1.0);
-            });
-          },
+        final height = constraints.maxHeight;
+        return Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: (e) => _setFrom(e.localPosition, width),
+          onPointerMove: (e) => _setFrom(e.localPosition, width),
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // "After" fills the whole area.
-              Positioned.fill(child: widget.after),
-
-              // "Before" is clipped to the left portion only.
-              Positioned.fill(
-                child: ClipRect(
-                  clipper: _LeftClipper(dividerX),
-                  child: Image.file(widget.before, fit: BoxFit.contain),
-                ),
-              ),
-
-              // Divider line + drag handle.
-              Positioned(
-                left: dividerX - 1,
-                top: 0,
-                bottom: 0,
-                child: Container(width: 2, color: Colors.white),
-              ),
-              Positioned(
-                left: dividerX - 16,
-                top: constraints.maxHeight / 2 - 16,
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: const [
-                      BoxShadow(blurRadius: 4, color: Colors.black38),
+              RepaintBoundary(child: IgnorePointer(child: widget.after)),
+              ValueListenableBuilder<double>(
+                valueListenable: _fraction,
+                builder: (context, f, _) {
+                  final dividerX = width * f;
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ClipRect(
+                        clipper: _LeftClipper(dividerX),
+                        child: Image.file(
+                          widget.before,
+                          fit: BoxFit.contain,
+                          gaplessPlayback: true,
+                        ),
+                      ),
+                      Positioned(
+                        left: dividerX - 1,
+                        top: 0,
+                        bottom: 0,
+                        child: Container(width: 2, color: Colors.white),
+                      ),
+                      Positioned(
+                        left: dividerX - 16,
+                        top: height / 2 - 16,
+                        child: Container(
+                          width: 32,
+                          height: 32,
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(blurRadius: 4, color: Colors.black38),
+                            ],
+                          ),
+                          child: const Icon(Icons.drag_handle, size: 18),
+                        ),
+                      ),
                     ],
-                  ),
-                  child: const Icon(Icons.drag_handle, size: 18),
-                ),
+                  );
+                },
               ),
-
-              // Labels.
-              const Positioned(
-                left: 8,
-                top: 8,
-                child: _Label(text: 'Before'),
-              ),
-              const Positioned(
-                right: 8,
-                top: 8,
-                child: _Label(text: 'After'),
-              ),
+              const Positioned(left: 8, top: 8, child: _Label(text: 'Before')),
+              const Positioned(right: 8, top: 8, child: _Label(text: 'After')),
             ],
           ),
         );

@@ -271,8 +271,9 @@ class _RefineExportScreenState extends State<RefineExportScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
               children: [
                 OutlinedButton.icon(
                   onPressed:
@@ -280,6 +281,7 @@ class _RefineExportScreenState extends State<RefineExportScreen> {
                   icon: const Icon(Icons.rotate_right),
                   label: const Text('Rotate 90°'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: _isBusy
                       ? null
@@ -287,12 +289,14 @@ class _RefineExportScreenState extends State<RefineExportScreen> {
                   icon: const Icon(Icons.center_focus_strong),
                   label: const Text('Auto Crop'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed:
                       _isBusy ? null : () => _pickPreset(ExportUtils.socialPresets),
                   icon: const Icon(Icons.crop),
                   label: const Text('Social Size'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed:
                       _isBusy ? null : () => _pickPreset(ExportUtils.idPhotoPresets),
@@ -301,9 +305,11 @@ class _RefineExportScreenState extends State<RefineExportScreen> {
                 ),
               ],
             ),
+            ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
               children: [
                 OutlinedButton.icon(
                   onPressed: _isBusy
@@ -312,6 +318,7 @@ class _RefineExportScreenState extends State<RefineExportScreen> {
                   icon: const Icon(Icons.auto_awesome),
                   label: const Text('Auto Enhance'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: _isBusy
                       ? null
@@ -319,6 +326,7 @@ class _RefineExportScreenState extends State<RefineExportScreen> {
                   icon: const Icon(Icons.blur_circular),
                   label: const Text('Shadow'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: _isBusy
                       ? null
@@ -329,27 +337,32 @@ class _RefineExportScreenState extends State<RefineExportScreen> {
                   icon: const Icon(Icons.emoji_emotions_outlined),
                   label: const Text('Sticker Outline'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: _isBusy ? null : _promptForText,
                   icon: const Icon(Icons.text_fields),
                   label: const Text('Text Behind'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: _isBusy ? null : _handleReplaceSky,
                   icon: const Icon(Icons.wb_cloudy),
                   label: const Text('Replace Sky'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: _isBusy ? null : _handleWatermark,
                   icon: const Icon(Icons.branding_watermark),
                   label: const Text('Watermark'),
                 ),
+                const SizedBox(width: 8),
                 OutlinedButton.icon(
                   onPressed: _isBusy ? null : _handleAddFrame,
                   icon: const Icon(Icons.filter_frames),
                   label: const Text('Frame'),
                 ),
               ],
+            ),
             ),
             const SizedBox(height: 12),
             const Text('Brightness', style: TextStyle(fontSize: 12)),

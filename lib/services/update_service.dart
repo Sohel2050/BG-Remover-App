@@ -34,6 +34,7 @@ class UpdateCheckResult {
 class UpdateService {
   // GitHub's "blob" page (what you get from clicking a file in the repo)
   // is an HTML page, not the raw JSON — this uses the raw content URL.
+  // Raw JSON (not the GitHub "blob" page). Empty disables the check.
   static const String _configUrl =
       'https://raw.githubusercontent.com/Sohel2050/Background-Remover-Controller/main/update_config.json';
 
@@ -41,6 +42,7 @@ class UpdateService {
   /// etc.) — callers should treat that as "nothing to show", never block
   /// the app on a failed network call.
   Future<UpdateCheckResult?> check() async {
+    if (_configUrl.isEmpty) return null;
     try {
       final response = await http
           .get(Uri.parse(_configUrl))

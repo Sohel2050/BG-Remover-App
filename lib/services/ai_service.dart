@@ -1,196 +1,117 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
-import 'dart:math' as math;
-import 'package:image/image.dart' as img;
+
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
-import 'color_space_utils.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Runs u2net.onnx on-device to produce a background-removed (transparent PNG)
-/// version of an input image. Model input/output: 320x320 RGB, single-channel
-/// saliency mask output (standard U2Net export).
+import 'image_decode.dart';
+import 'image_ops.dart';
+import 'model_store.dart';
+import 'tool_utils.dart';
+
+/// Cuts the subject out of a photo on-device (ISNet, with U2Net as a
+/// lighter fallback).
 ///
-/// Uses the `flutter_onnxruntime` package (NOT the older/unmaintained
-/// `onnxruntime` package — that one is stuck on an old Android compileSdk
-/// and will fail to build against modern androidx dependencies).
+/// Quality notes:
+///  - Input uses the same preprocessing the models were trained with
+///    (max-scaling + mean/std). Plain /255 makes the model miss faces and
+///    clothes.
+///  - The mask is cleaned up: stray background blobs are dropped and the
+///    alpha curve is tuned so the whole body and clothes stay.
+///  - All heavy pixel work runs in a background isolate, so the screen
+///    stays responsive.
 class AiService {
-  static const String _modelAssetPath = 'assets/models/u2net.onnx';
-  static const int _inputSize = 320;
+  /// Longest side kept while working. Bigger photos are scaled down so
+  /// the phone does not run out of memory.
+  static const int _maxWorkSide = 2560;
 
   final OnnxRuntime _ort = OnnxRuntime();
   OrtSession? _session;
+  bool _isIsnet = true;
+  int _inputSize = 1024;
   bool get isLoaded => _session != null;
 
-  /// Loads the ONNX model from assets into memory. Call once (e.g. at app
-  /// start or lazily before first use).
+  /// Loads the high-quality ISNet model (1024px). If it cannot be loaded
+  /// or run on this phone, the lighter U2Net (320px) is used instead.
   Future<void> loadModel() async {
-    if (_session != null) return; // already loaded
-    _session = await _ort.createSessionFromAsset(_modelAssetPath);
+    if (_session != null) return;
+    try {
+      _session = await ModelStore.load(_ort, ModelStore.isnet);
+      _isIsnet = true;
+      _inputSize = 1024;
+    } on ModelMissingException {
+      rethrow;
+    } catch (_) {
+      await _loadLight();
+    }
   }
 
-  /// Runs background removal on [inputImage] and returns a new PNG file
-  /// with the background made transparent.
+  Future<void> _loadLight() async {
+    _session?.close();
+    _session = await ModelStore.load(_ort, ModelStore.u2net);
+    _isIsnet = false;
+    _inputSize = 320;
+  }
+
   Future<File> removeBackground(File inputImage) async {
-    if (_session == null) {
-      await loadModel();
+    await loadModel();
+    try {
+      return await _run(inputImage);
+    } on ModelMissingException {
+      rethrow;
+    } catch (e) {
+      if (!_isIsnet) rethrow;
+      // High-quality model failed (usually memory). Retry lighter.
+      await _loadLight();
+      return _run(inputImage);
     }
+  }
+
+  Future<File> _run(File inputImage) async {
     final session = _session!;
 
-    // 1. Decode input image
-    final inputBytes = await inputImage.readAsBytes();
-    var decoded = img.decodeImage(inputBytes);
-    if (decoded == null) {
-      throw Exception('Could not decode input image');
-    }
-    // Fix wide-gamut (e.g. iPhone Display P3) photos looking oversaturated
-    // once re-encoded — see color_space_utils.dart for why this matters.
-    decoded = ColorSpaceUtils.normalizeToSrgb(decoded);
+    final decoded =
+        await ImageDecode.fromFile(inputImage, maxSide: _maxWorkSide);
+    final w = decoded.width, h = decoded.height;
+    final rgb = ImageDecode.rgbBytes(decoded);
+    final size = _inputSize;
+    final isnet = _isIsnet;
 
-    final originalWidth = decoded.width;
-    final originalHeight = decoded.height;
-
-    // 2. Resize to model input size (320x320) and normalize to [0,1]
-    final resized = img.copyResize(
-      decoded,
-      width: _inputSize,
-      height: _inputSize,
-      interpolation: img.Interpolation.linear,
+    final input = await Isolate.run(
+      () => prepareSalientInput(rgb, w, h, size, isnet),
     );
-
-    final inputTensorData = _imageToCHWFloat32(resized);
-
-    final inputName = session.inputNames.first;
-    final outputName = session.outputNames.first;
 
     final inputValue = await OrtValue.fromList(
-      inputTensorData.toList(),
-      [1, 3, _inputSize, _inputSize],
+      input.toList(),
+      [1, 3, size, size],
     );
-
-    // 3. Run inference
-    final outputs = await session.run({inputName: inputValue});
+    final outputs = await session.run({session.inputNames.first: inputValue});
     await inputValue.dispose();
 
-    final outputValue = outputs[outputName];
+    // The first output is the fused, final prediction.
+    final outputValue = outputs[session.outputNames.first];
     if (outputValue == null) {
       throw Exception('Model produced no output');
     }
-
-    // 4. Extract mask (shape typically [1,1,320,320])
-    final rawOutput = await outputValue.asList();
-    final maskFlat = _flattenToFloat32(rawOutput);
-
+    final raw = ToolUtils.flatten(await outputValue.asList());
     for (final v in outputs.values) {
       await v.dispose();
     }
-
-    // 5. Build alpha mask, resize back to original dimensions
-    final maskImage = _maskToImage(maskFlat, _inputSize, _inputSize);
-    final maskResized = img.copyResize(
-      maskImage,
-      width: originalWidth,
-      height: originalHeight,
-      interpolation: img.Interpolation.linear,
-    );
-
-    // 6. Apply mask as alpha channel onto the original full-res image
-    final result = img.Image(
-      width: originalWidth,
-      height: originalHeight,
-      numChannels: 4,
-    );
-
-    for (int y = 0; y < originalHeight; y++) {
-      for (int x = 0; x < originalWidth; x++) {
-        final srcPixel = decoded.getPixel(x, y);
-        final alpha = maskResized.getPixel(x, y).r; // 0-255 grayscale used as alpha
-        result.setPixelRgba(
-          x,
-          y,
-          srcPixel.r.toInt(),
-          srcPixel.g.toInt(),
-          srcPixel.b.toInt(),
-          alpha.toInt(),
-        );
-      }
+    if (raw.length < size * size) {
+      throw Exception('Unexpected model output size.');
     }
 
-    // 7. Save as PNG to a temp file
-    final pngBytes = img.encodePng(result);
+    final png = await Isolate.run(
+      () => composeCutoutPng(rgb, w, h, raw, size),
+    );
+
     final tempDir = await getTemporaryDirectory();
     final outFile = File(
       '${tempDir.path}/bg_removed_${DateTime.now().millisecondsSinceEpoch}.png',
     );
-    await outFile.writeAsBytes(pngBytes);
-
+    await outFile.writeAsBytes(png);
     return outFile;
-  }
-
-  /// Converts an [img.Image] to a CHW (channel-first) Float32 list normalized
-  /// to [0,1], matching the standard U2Net preprocessing.
-  Float32List _imageToCHWFloat32(img.Image image) {
-    final w = image.width;
-    final h = image.height;
-    final data = Float32List(3 * w * h);
-
-    int rIndex = 0;
-    int gIndex = w * h;
-    int bIndex = 2 * w * h;
-
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        final pixel = image.getPixel(x, y);
-        data[rIndex++] = pixel.r / 255.0;
-        data[gIndex++] = pixel.g / 255.0;
-        data[bIndex++] = pixel.b / 255.0;
-      }
-    }
-    return data;
-  }
-
-  /// Flattens whatever nested/flat list structure asList() returns into a
-  /// single Float32List (defensive — shape of the returned data can vary
-  /// slightly by platform backend).
-  Float32List _flattenToFloat32(dynamic value) {
-    final List<double> flat = [];
-
-    void recurse(dynamic v) {
-      if (v is List) {
-        for (final item in v) {
-          recurse(item);
-        }
-      } else if (v is num) {
-        flat.add(v.toDouble());
-      }
-    }
-
-    recurse(value);
-    return Float32List.fromList(flat);
-  }
-
-  /// Converts a flat [0,1] saliency mask into a grayscale img.Image where
-  /// pixel value = alpha (0-255). Also applies min-max normalization since
-  /// raw U2Net output isn't always perfectly bounded to [0,1].
-  img.Image _maskToImage(Float32List mask, int width, int height) {
-    double minV = mask.first;
-    double maxV = mask.first;
-    for (final v in mask) {
-      minV = math.min(minV, v);
-      maxV = math.max(maxV, v);
-    }
-    final range = (maxV - minV).abs() < 1e-6 ? 1.0 : (maxV - minV);
-
-    final maskImage = img.Image(width: width, height: height, numChannels: 1);
-    int i = 0;
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        final normalized = ((mask[i] - minV) / range).clamp(0.0, 1.0);
-        final gray = (normalized * 255).round();
-        maskImage.setPixelRgba(x, y, gray, gray, gray, 255);
-        i++;
-      }
-    }
-    return maskImage;
   }
 
   void dispose() {

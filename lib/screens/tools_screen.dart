@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import '../services/ads_service.dart';
 import '../services/image_service.dart';
 import '../widgets/levelplay_ads.dart';
 import 'face_retouch_screen.dart';
@@ -60,13 +61,15 @@ class ToolsScreen extends StatelessWidget {
             child: const Padding(
               padding: EdgeInsets.all(12),
               child: Text(
-                'Object Removal, Upscale and Select Subjects each need a '
-                'model file added to assets/models/ — see MODELS_SETUP.md. '
-                'Skin Smoothing works out of the box.',
+                'Object Removal, Upscale and Select Subjects download their '
+                'AI model the first time you use them (one time only, needs '
+                'internet). Skin Smoothing works out of the box.',
               ),
             ),
           ),
-          const LevelPlayNativeCard(placementName: 'tools_list'),
+          AdIds.useNative
+              ? const LevelPlayNativeCard(placementName: 'tools_list')
+              : const LevelPlayMrec(placementName: 'tools_mrec'),
           for (final t in tools)
             Card(
               child: ListTile(

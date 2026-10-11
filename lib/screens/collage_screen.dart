@@ -21,7 +21,7 @@ class _CollageScreenState extends State<CollageScreen> {
   bool _isBuilding = false;
 
   Future<void> _addImages() async {
-    final picked = await ImagePicker().pickMultiImage(imageQuality: 100);
+    final picked = await ImagePicker().pickMultiImage();
     if (picked.isEmpty) return;
     setState(() {
       _images.addAll(picked.map((x) => File(x.path)).take(6 - _images.length));

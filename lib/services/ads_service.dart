@@ -1,12 +1,20 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/foundation.dart';
 import 'package:unity_levelplay_mediation/unity_levelplay_mediation.dart';
 
 class AdIds {
   static const String appKey = '2820a4965';
   static const String banner = '4cafh3jwdbyn6ohp';
-  static const String interstitial = 'hu149fj6h72r1eb';
+
+  static const String mrec = 'shsn7enqstxc5qpi';
+  static const String interstitial = 'hu149fj6h72r1ebj';
   static const String native = 'ypo41rpcpf7pvcnq';
   static const String rewarded = 'mn5ikgnzdo1xdlgh';
+
+  /// Native ads are off until a native ad network is added in LevelPlay.
+  /// Where a native card would show, an MREC is shown instead.
+  static const bool useNative = false;
 }
 
 class AdsService {
@@ -22,6 +30,9 @@ class AdsService {
 
   Future<void> init() async {
     if (_initialized) return;
+
+    // These ids are Android ids; iOS needs its own key and units.
+    if (!Platform.isAndroid) return;
 
     try {
       final initRequest =

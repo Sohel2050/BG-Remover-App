@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
+import '../screens/privacy_policy_screen.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../services/app_links.dart';
 import '../screens/about_screen.dart';
-import '../screens/batch_screen.dart';
-import '../screens/collage_screen.dart';
-import '../screens/recent_projects_screen.dart';
-import '../screens/settings_screen.dart';
-import '../screens/tools_screen.dart';
 
 class AppDrawer extends StatelessWidget {
   const AppDrawer({super.key});
@@ -31,11 +27,11 @@ class AppDrawer extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primaryContainer,
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  Icon(Icons.auto_fix_high, size: 40),
+                  ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.asset('assets/images/app_logo.png', width: 44, height: 44)),
                   SizedBox(height: 8),
                   Text(
                     'BG Remover',
@@ -46,45 +42,18 @@ class AppDrawer extends StatelessWidget {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.history),
-              title: const Text('Recent Projects'),
-              onTap: () => _push(context, const RecentProjectsScreen()),
-            ),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome),
-              title: const Text('AI Tools'),
-              onTap: () => _push(context, const ToolsScreen()),
-            ),
-            ListTile(
-              leading: const Icon(Icons.dynamic_feed),
-              title: const Text('Batch Process'),
-              onTap: () => _push(context, const BatchScreen()),
-            ),
-            ListTile(
-              leading: const Icon(Icons.dashboard),
-              title: const Text('Collage Maker'),
-              onTap: () => _push(context, const CollageScreen()),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.settings),
-              title: const Text('Settings'),
-              onTap: () => _push(context, const SettingsScreen()),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.star_outline),
-              title: const Text('Rate this app'),
-              onTap: () => _open(AppLinks.currentStoreUrl),
+              leading: const Icon(Icons.home_outlined),
+              title: const Text('Home'),
+              onTap: () => Navigator.of(context).pop(),
             ),
             ListTile(
               leading: const Icon(Icons.apps),
-              title: Text('More apps by ${AppLinks.developerName}'),
+              title: const Text('More Apps'),
               onTap: () => _open(AppLinks.moreAppsUrl),
             ),
             ListTile(
               leading: const Icon(Icons.share_outlined),
-              title: const Text('Share this app'),
+              title: const Text('Share'),
               onTap: () => SharePlus.instance.share(
                 ShareParams(
                   text: 'Remove photo backgrounds free, on-device: '
@@ -95,7 +64,7 @@ class AppDrawer extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.privacy_tip_outlined),
               title: const Text('Privacy Policy'),
-              onTap: () => _open(AppLinks.privacyPolicyUrl),
+              onTap: () => _push(context, const PrivacyPolicyScreen()),
             ),
             ListTile(
               leading: const Icon(Icons.info_outline),

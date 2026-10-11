@@ -6,6 +6,7 @@ import '../services/prefs_service.dart';
 import '../services/project_storage.dart';
 import '../services/subject_detection_service.dart';
 import '../widgets/tool_error.dart';
+import '../widgets/levelplay_ads.dart';
 import 'edit_screen.dart';
 
 /// Detects individual people/objects, lets you tap the ones to keep, then
@@ -87,6 +88,9 @@ class _SubjectSelectScreenState extends State<SubjectSelectScreen> {
     final result = _result;
     return Scaffold(
       appBar: AppBar(title: const Text('Select Subjects')),
+      bottomNavigationBar: const SafeArea(
+        child: LevelPlayBanner(placementName: 'subject_banner'),
+      ),
       body: Column(
         children: [
           Expanded(

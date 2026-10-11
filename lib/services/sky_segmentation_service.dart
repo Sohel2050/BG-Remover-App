@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'color_space_utils.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
+import 'model_store.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Runs a dedicated sky-segmentation ONNX model to produce a binary/soft
@@ -27,7 +28,7 @@ class SkySegmentationService {
 
   Future<void> loadModel() async {
     if (_session != null) return;
-    _session = await _ort.createSessionFromAsset(_modelAssetPath);
+    _session = await ModelStore.load(_ort, ModelStore.sky);
   }
 
   /// Returns a new image where sky pixels have been replaced by

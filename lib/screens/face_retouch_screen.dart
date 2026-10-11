@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../services/face_retouch_service.dart';
 import '../widgets/before_after_slider.dart';
 import '../widgets/tool_error.dart';
+import '../widgets/levelplay_ads.dart';
 import 'export_screen.dart';
 
 class FaceRetouchScreen extends StatefulWidget {
@@ -45,6 +46,9 @@ class _FaceRetouchScreenState extends State<FaceRetouchScreen> {
               child: const Text('Done'),
             ),
         ],
+      ),
+      bottomNavigationBar: const SafeArea(
+        child: LevelPlayBanner(placementName: 'retouch_banner'),
       ),
       body: Column(
         children: [

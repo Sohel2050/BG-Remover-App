@@ -1,13 +1,12 @@
 import 'package:flutter/material.dart';
 import '../services/prefs_service.dart';
 
-/// Holds app-wide settings (theme mode, language) and persists changes.
+/// Holds app-wide settings (theme mode) and persists changes.
 /// Loaded once at startup in main.dart before runApp.
 class AppSettings extends ChangeNotifier {
   final PrefsService _prefs;
 
   ThemeMode themeMode = ThemeMode.system;
-  Locale locale = const Locale('en');
 
   AppSettings(this._prefs);
 
@@ -18,9 +17,6 @@ class AppSettings extends ChangeNotifier {
       'dark' => ThemeMode.dark,
       _ => ThemeMode.system,
     };
-
-    final localeCode = await _prefs.getLocaleCode();
-    locale = Locale(localeCode);
 
     notifyListeners();
   }
@@ -35,9 +31,4 @@ class AppSettings extends ChangeNotifier {
     });
   }
 
-  Future<void> setLocale(Locale newLocale) async {
-    locale = newLocale;
-    notifyListeners();
-    await _prefs.setLocaleCode(newLocale.languageCode);
-  }
 }

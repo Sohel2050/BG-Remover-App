@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' show PlatformDispatcher;
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'models/edit_state.dart';
@@ -9,9 +11,22 @@ import 'screens/onboarding_screen.dart';
 import 'services/update_service.dart';
 import 'services/ads_service.dart';
 import 'widgets/update_dialog.dart';
+import 'widgets/model_download_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+  };
+  // Uncaught async errors are logged instead of closing the app.
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('Uncaught error: $error');
+    return true;
+  };
+  await SystemChrome.setPreferredOrientations(const [
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
 
   final prefsService = PrefsService();
   final appSettings = AppSettings(prefsService);
@@ -47,8 +62,9 @@ class BgRemoverApp extends StatelessWidget {
             title: 'BG Remover',
             debugShowCheckedModeBanner: false,
             themeMode: settings.themeMode,
-            locale: settings.locale,
-            supportedLocales: const [Locale('en'), Locale('bn')],
+            supportedLocales: const [Locale('en')],
+            builder: (context, child) =>
+                ModelDownloadOverlay(child: child ?? const SizedBox.shrink()),
             localizationsDelegates: const [
               GlobalMaterialLocalizations.delegate,
               GlobalWidgetsLocalizations.delegate,
@@ -56,10 +72,12 @@ class BgRemoverApp extends StatelessWidget {
             ],
             theme: ThemeData(
               colorSchemeSeed: Colors.deepPurple,
+              appBarTheme: const AppBarTheme(centerTitle: true),
               useMaterial3: true,
             ),
             darkTheme: ThemeData(
               colorSchemeSeed: Colors.deepPurple,
+              appBarTheme: const AppBarTheme(centerTitle: true),
               brightness: Brightness.dark,
               useMaterial3: true,
             ),

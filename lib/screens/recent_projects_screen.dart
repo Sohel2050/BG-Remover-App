@@ -5,6 +5,7 @@ import '../models/edit_state.dart';
 import '../services/prefs_service.dart';
 import '../services/project_storage.dart';
 import '../widgets/checkerboard_background.dart';
+import '../widgets/levelplay_ads.dart';
 import 'edit_screen.dart';
 
 /// Grid of past projects. Tap to reopen one in the editor (with its saved
@@ -87,31 +88,39 @@ class _RecentProjectsScreenState extends State<RecentProjectsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _projects.isEmpty
               ? const Center(child: Text('No recent projects yet'))
-              : GridView.builder(
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate:
-                      const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 8,
-                    mainAxisSpacing: 8,
-                  ),
-                  itemCount: _projects.length,
-                  itemBuilder: (context, index) {
-                    final project = _projects[index];
-                    return GestureDetector(
-                      onTap: () => _open(project),
-                      onLongPress: () => _confirmDelete(project),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: CheckerboardBackground(
-                          child: Image.file(
-                            File(project.processedPath),
-                            fit: BoxFit.cover,
-                          ),
+              : Column(
+                  children: [
+                    Expanded(
+                      child: GridView.builder(
+                        padding: const EdgeInsets.all(12),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
                         ),
+                        itemCount: _projects.length,
+                        itemBuilder: (context, index) {
+                          final project = _projects[index];
+                          return GestureDetector(
+                            onTap: () => _open(project),
+                            onLongPress: () => _confirmDelete(project),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: CheckerboardBackground(
+                                child: Image.file(
+                                  File(project.processedPath),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
+                    ),
+                    const LevelPlayMrec(placementName: 'recent_mrec'),
+                    const SizedBox(height: 8),
+                  ],
                 ),
     );
   }

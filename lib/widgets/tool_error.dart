@@ -20,7 +20,8 @@ void showToolError(BuildContext context, Object error) {
       ),
     );
   } else {
-    final msg = error.toString().replaceFirst('Exception: ', '');
+    var msg = error.toString().replaceFirst('Exception: ', '');
+    if (msg.length > 160) msg = '${msg.substring(0, 160)}...';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }

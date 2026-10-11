@@ -101,6 +101,7 @@ class _LevelPlayNativeCardState
       )
           .withListener(this)
           .build();
+      _nativeAd!.loadAd();
     }
   }
 
@@ -150,4 +151,70 @@ class _LevelPlayNativeCardState
       LevelPlayNativeAd nativeAd,
       AdInfo adInfo,
       ) {}
+}
+
+/// 300x250 medium-rectangle ad. Collapses when no ad is available.
+class LevelPlayMrec extends StatefulWidget {
+  final String? placementName;
+
+  const LevelPlayMrec({super.key, this.placementName});
+
+  @override
+  State<LevelPlayMrec> createState() => _LevelPlayMrecState();
+}
+
+class _LevelPlayMrecState extends State<LevelPlayMrec>
+    with LevelPlayBannerAdViewListener {
+  final GlobalKey<LevelPlayBannerAdViewState> _key =
+      GlobalKey<LevelPlayBannerAdViewState>();
+  bool _failed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!AdsService.instance.isInitialized || _failed) {
+      return const SizedBox.shrink();
+    }
+    return Center(
+      child: SizedBox(
+        width: 300,
+        height: 250,
+        child: LevelPlayBannerAdView(
+          key: _key,
+          adUnitId: AdIds.mrec,
+          adSize: LevelPlayAdSize.MEDIUM_RECTANGLE,
+          listener: this,
+          placementName: widget.placementName,
+          onPlatformViewCreated: () {
+            _key.currentState?.loadAd();
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  void onAdLoaded(LevelPlayAdInfo adInfo) {}
+
+  @override
+  void onAdLoadFailed(LevelPlayAdError error) {
+    if (mounted) setState(() => _failed = true);
+  }
+
+  @override
+  void onAdDisplayed(LevelPlayAdInfo adInfo) {}
+
+  @override
+  void onAdDisplayFailed(LevelPlayAdInfo adInfo, LevelPlayAdError error) {}
+
+  @override
+  void onAdClicked(LevelPlayAdInfo adInfo) {}
+
+  @override
+  void onAdExpanded(LevelPlayAdInfo adInfo) {}
+
+  @override
+  void onAdCollapsed(LevelPlayAdInfo adInfo) {}
+
+  @override
+  void onAdLeftApplication(LevelPlayAdInfo adInfo) {}
 }

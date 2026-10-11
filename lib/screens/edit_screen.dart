@@ -4,6 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/edit_state.dart';
 import '../services/ai_service.dart';
+import '../services/image_ops.dart';
+import '../services/image_decode.dart';
+import 'dart:isolate';
+import 'dart:typed_data';
+import 'package:path_provider/path_provider.dart';
 import '../services/prefs_service.dart';
 import '../services/project_storage.dart';
 import '../widgets/checkerboard_background.dart';
@@ -11,6 +16,9 @@ import '../widgets/brush_canvas.dart';
 import '../widgets/before_after_slider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'export_screen.dart';
+import 'crop_screen.dart';
+import '../widgets/levelplay_ads.dart';
+import '../services/crop_service.dart';
 import 'refine_export_screen.dart';
 
 class EditScreen extends StatefulWidget {
@@ -24,7 +32,7 @@ class _EditScreenState extends State<EditScreen> {
   final AiService _aiService = AiService();
   final GlobalKey<BrushCanvasState> _canvasKey = GlobalKey<BrushCanvasState>();
 
-  BrushMode _brushMode = BrushMode.erase;
+  BrushMode _brushMode = BrushMode.move;
   double _brushSize = 40;
   double _edgeSoftness = 0.3;
   bool _canUndo = false;
@@ -99,11 +107,13 @@ class _EditScreenState extends State<EditScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('• One finger: draw with the brush'),
+            Text('• Erase / Restore: draw with one finger'),
             SizedBox(height: 6),
-            Text('• Two fingers: pinch to zoom, drag to pan'),
+            Text('• Move: drag to pan, pinch to zoom and check quality'),
             SizedBox(height: 6),
-            Text('• Erase removes parts, Restore brings the original back'),
+            Text('• Two fingers always pinch-zoom and pan'),
+            SizedBox(height: 6),
+            Text('• Restore brings back anything erased too far'),
             SizedBox(height: 6),
             Text('• Undo/Redo are at the top; your work is saved automatically'),
           ],
@@ -133,11 +143,37 @@ class _EditScreenState extends State<EditScreen> {
 
     setState(() => _isExporting = true);
     try {
-      final file = await canvasState.exportComposite(
-        background: _backgroundChoice,
-        solidColor: _solidColor,
-        customBackgroundFile: _customBgFile,
-      );
+      File file;
+      try {
+        // Pro finish: bake edits, smooth the cut-out border, then place it
+        // on the chosen background.
+        final baked = await canvasState.bakeTransparent();
+        final px = await ImageDecode.rgbaFromFile(baked);
+        int opaque = 0;
+        for (int i = 3; i < px.rgba.length; i += 4) {
+          if (px.rgba[i] > 8) opaque++;
+        }
+        if (opaque < 16) throw StateError('empty cut-out');
+        final smoothPng =
+            await _refineInIsolate(px.rgba, px.width, px.height, 0);
+        final dir = await getTemporaryDirectory();
+        final smoothFile = File(
+            '${dir.path}/smooth_${DateTime.now().millisecondsSinceEpoch}.png');
+        await smoothFile.writeAsBytes(smoothPng);
+        file = await canvasState.exportComposite(
+          background: _backgroundChoice,
+          solidColor: _solidColor,
+          customBackgroundFile: _customBgFile,
+          subjectOverride: smoothFile,
+        );
+      } catch (_) {
+        // Fall back to the plain export if the smoothing step fails.
+        file = await canvasState.exportComposite(
+          background: _backgroundChoice,
+          solidColor: _solidColor,
+          customBackgroundFile: _customBgFile,
+        );
+      }
       if (!mounted) return;
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -146,6 +182,118 @@ class _EditScreenState extends State<EditScreen> {
       );
     } catch (e) {
       _showSnack('Export failed: $e');
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  /// Crop the photo before removing the background.
+  Future<void> _cropOriginal(EditState editState) async {
+    final original = editState.originalImage;
+    if (original == null) return;
+    final rect = await Navigator.of(context).push<Rect>(
+      MaterialPageRoute(builder: (_) => CropScreen(image: original)),
+    );
+    if (rect == null || !mounted) return;
+    setState(() => _isExporting = true);
+    try {
+      final f = await CropService.cropPhoto(original, rect);
+      editState.setOriginalImage(f);
+    } catch (e) {
+      _showSnack('Crop failed: $e');
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  /// Crop the finished cut-out (with your edits) and the photo together.
+  Future<void> _cropResult() async {
+    final canvasState = _canvasKey.currentState;
+    final editState = context.read<EditState>();
+    final original = editState.originalImage;
+    if (canvasState == null || original == null) return;
+    final baked = await canvasState.bakeTransparent();
+    if (!mounted) return;
+    final rect = await Navigator.of(context).push<Rect>(
+      MaterialPageRoute(builder: (_) => CropScreen(image: baked)),
+    );
+    if (rect == null || !mounted) return;
+    setState(() => _isExporting = true);
+    try {
+      final p = await CropService.cropPng(baked, rect);
+      final o = await CropService.cropPhoto(original, rect);
+      final saved = await ProjectStorage.persistProject(o, p);
+      editState.setOriginalImage(saved.original);
+      editState.setProcessedImage(saved.processed);
+    } catch (e) {
+      _showSnack('Crop failed: $e');
+    } finally {
+      if (mounted) setState(() => _isExporting = false);
+    }
+  }
+
+  static Future<Uint8List> _refineInIsolate(
+      Uint8List rgba, int w, int h, int s) {
+    return Isolate.run(() => refineEdgePng(rgba, w, h, s, 1));
+  }
+
+  /// Bakes the current edits, then shrinks the matte and removes colour
+  /// fringes left from the old background.
+  Future<void> _cleanEdges() async {
+    final canvasState = _canvasKey.currentState;
+    final editState = context.read<EditState>();
+    final original = editState.originalImage;
+    if (canvasState == null || original == null) return;
+    double shrink = 2;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Clean edges'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Removes the leftover background border and tint.'),
+              Slider(
+                value: shrink,
+                min: 0,
+                max: 8,
+                divisions: 8,
+                label: '${shrink.round()} px',
+                onChanged: (v) => setD(() => shrink = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _isExporting = true);
+    try {
+      final baked = await canvasState.bakeTransparent();
+      final decoded = await ImageDecode.rgbaFromFile(baked);
+      final s = shrink.round();
+      final png = await _refineInIsolate(
+          decoded.rgba, decoded.width, decoded.height, s);
+      final dir = await getTemporaryDirectory();
+      final f = File(
+          '${dir.path}/edge_${DateTime.now().millisecondsSinceEpoch}.png');
+      await f.writeAsBytes(png);
+      final saved = await ProjectStorage.persistProject(original, f);
+      editState.setOriginalImage(saved.original);
+      editState.setProcessedImage(saved.processed);
+    } catch (e) {
+      _showSnack('Clean edges failed: $e');
     } finally {
       if (mounted) setState(() => _isExporting = false);
     }
@@ -273,10 +421,24 @@ class _EditScreenState extends State<EditScreen> {
                           }
                         : null,
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.zoom_out_map),
-                    tooltip: 'Reset zoom',
-                    onPressed: () => _canvasKey.currentState?.resetView(),
+                  PopupMenuButton<String>(
+                    onSelected: (v) {
+                      if (v == 'reset') _canvasKey.currentState?.resetView();
+                      if (v == 'edge') _cleanEdges();
+                      if (v == 'crop') _cropResult();
+                      if (v == 'clear') {
+                        _canvasKey.currentState?.clearStrokes();
+                        _refreshUndoRedo();
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'crop', child: Text('Crop')),
+                      PopupMenuItem(
+                          value: 'edge', child: Text('Clean edges')),
+                      PopupMenuItem(value: 'reset', child: Text('Reset zoom')),
+                      PopupMenuItem(
+                          value: 'clear', child: Text('Clear all edits')),
+                    ],
                   ),
                 ],
               ]
@@ -291,44 +453,126 @@ class _EditScreenState extends State<EditScreen> {
           ),
           if (showControls && !_compareMode) _buildBrushControls(),
           if (showControls) _buildBackgroundPicker(),
+          if (showControls && !_compareMode) _buildExportBar(),
         ],
       ),
-      floatingActionButton: processed == null
-          ? FloatingActionButton.extended(
-              onPressed: editState.isProcessing
-                  ? null
-                  : () => _handleRemoveBackground(editState),
-              icon: const Icon(Icons.auto_fix_high),
-              label: const Text('Remove Background'),
-            )
-          : (_compareMode
-              ? null
-              : FloatingActionButton.extended(
-                  onPressed: _isExporting ? null : _handleExport,
-                  icon: _isExporting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.file_download),
-                  label: Text(_isExporting ? 'Exporting...' : 'Export'),
-                )),
+      bottomNavigationBar: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (processed == null)
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: editState.isProcessing || original == null
+                                ? null
+                                : () => _cropOriginal(editState),
+                            icon: const Icon(Icons.crop),
+                            label: const Text('Crop'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: FilledButton.icon(
+                            onPressed: editState.isProcessing || original == null
+                                ? null
+                                : () => _handleRemoveBackground(editState),
+                            icon: const Icon(Icons.auto_fix_high),
+                            label: const Text('Remove Background'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    TextButton(
+                      onPressed: editState.isProcessing || original == null
+                          ? null
+                          : () => Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      RefineExportScreen(initialFile: original),
+                                ),
+                              ),
+                      child: const Text('Skip background removal and export'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          const SafeArea(
+            top: false,
+            child: LevelPlayBanner(placementName: 'edit_banner'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExportBar() {
+    return Container(
+      color: Theme.of(context).colorScheme.surface,
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: SafeArea(
+        top: false,
+        bottom: false,
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _isExporting ? null : _handleExport,
+            icon: _isExporting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.file_download),
+            label: Text(_isExporting ? 'Exporting...' : 'Export'),
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildBrushControls() {
+    final brushing = _brushMode != BrushMode.move;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      ),
-      child: SafeArea(
-        top: false,
-        bottom: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<BrushMode>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(
+                  value: BrushMode.erase,
+                  icon: Icon(Icons.auto_fix_normal, size: 18),
+                  label: Text('Erase'),
+                ),
+                ButtonSegment(
+                  value: BrushMode.restore,
+                  icon: Icon(Icons.restore, size: 18),
+                  label: Text('Restore'),
+                ),
+                ButtonSegment(
+                  value: BrushMode.move,
+                  icon: Icon(Icons.pan_tool_alt, size: 18),
+                  label: Text('Move'),
+                ),
+              ],
+              selected: {_brushMode},
+              onSelectionChanged: (s) => setState(() => _brushMode = s.first),
+            ),
+          ),
+          if (brushing)
             Row(
               children: [
                 const Icon(Icons.brush, size: 18),
@@ -337,72 +581,44 @@ class _EditScreenState extends State<EditScreen> {
                     value: _brushSize,
                     min: 10,
                     max: 100,
-                    label: _brushSize.round().toString(),
                     onChanged: (v) => setState(() => _brushSize = v),
                   ),
                 ),
-              ],
-            ),
-            Row(
-              children: [
                 const Icon(Icons.blur_on, size: 18),
                 Expanded(
                   child: Slider(
                     value: _edgeSoftness,
                     min: 0,
                     max: 1,
-                    label: '${(_edgeSoftness * 100).round()}%',
                     onChanged: (v) => setState(() => _edgeSoftness = v),
                   ),
                 ),
               ],
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'Drag to pan, pinch to zoom',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                ChoiceChip(
-                  label: const Text('Erase'),
-                  avatar: const Icon(Icons.auto_fix_normal, size: 18),
-                  selected: _brushMode == BrushMode.erase,
-                  onSelected: (_) =>
-                      setState(() => _brushMode = BrushMode.erase),
-                ),
-                ChoiceChip(
-                  label: const Text('Restore'),
-                  avatar: const Icon(Icons.restore, size: 18),
-                  selected: _brushMode == BrushMode.restore,
-                  onSelected: (_) =>
-                      setState(() => _brushMode = BrushMode.restore),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'One finger: draw · Two fingers: pinch to zoom / pan',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
 
   Widget _buildBackgroundPicker() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        boxShadow: const [BoxShadow(blurRadius: 4, color: Colors.black12)],
-      ),
-      child: SafeArea(
-        top: false,
-        child: Column(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      color: Theme.of(context).colorScheme.surface,
+      child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Background', style: TextStyle(fontSize: 12)),
-            const SizedBox(height: 6),
-            Row(
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
               children: [
                 ChoiceChip(
                   label: const Text('Transparent'),
@@ -444,6 +660,7 @@ class _EditScreenState extends State<EditScreen> {
                 ),
               ],
             ),
+            ),
             if (_backgroundChoice == BackgroundChoice.solid) ...[
               const SizedBox(height: 8),
               Row(
@@ -472,7 +689,6 @@ class _EditScreenState extends State<EditScreen> {
             ],
           ],
         ),
-      ),
     );
   }
 }

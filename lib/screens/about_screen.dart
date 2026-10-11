@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'privacy_policy_screen.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,8 +33,8 @@ class _AboutScreenState extends State<AboutScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Center(
-            child: Icon(Icons.auto_fix_high, size: 72),
+          Center(
+            child: ClipRRect(borderRadius: BorderRadius.circular(16), child: Image.asset('assets/images/app_logo.png', width: 80, height: 80)),
           ),
           const SizedBox(height: 12),
           Center(
@@ -66,8 +67,9 @@ class _AboutScreenState extends State<AboutScreen> {
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined),
             title: const Text('Privacy Policy'),
-            onTap: () => _open(AppLinks.privacyPolicyUrl),
-            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const PrivacyPolicyScreen())),
+            trailing: const Icon(Icons.chevron_right),
           ),
           ListTile(
             leading: const Icon(Icons.star_outline),

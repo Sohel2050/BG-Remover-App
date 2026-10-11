@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import '../services/inpaint_service.dart';
 import '../widgets/tool_error.dart';
+import '../widgets/levelplay_ads.dart';
 import 'export_screen.dart';
 
 /// Paint over unwanted things, tap Remove, and LaMa fills them in.
@@ -103,6 +104,9 @@ class _ObjectRemovalScreenState extends State<ObjectRemovalScreen> {
             child: const Text('Done'),
           ),
         ],
+      ),
+      bottomNavigationBar: const SafeArea(
+        child: LevelPlayBanner(placementName: 'object_banner'),
       ),
       body: Column(
         children: [
