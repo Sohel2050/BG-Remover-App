@@ -10,6 +10,7 @@ import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'services/update_service.dart';
 import 'services/ads_service.dart';
+import 'services/shared_image_service.dart';
 import 'widgets/update_dialog.dart';
 import 'widgets/model_download_overlay.dart';
 
@@ -59,6 +60,7 @@ class BgRemoverApp extends StatelessWidget {
       child: Consumer<AppSettings>(
         builder: (context, settings, _) {
           return MaterialApp(
+            navigatorKey: appNavigatorKey,
             title: 'BG Remover',
             debugShowCheckedModeBanner: false,
             themeMode: settings.themeMode,
@@ -111,6 +113,13 @@ class _AppStartupGateState extends State<_AppStartupGate> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkForUpdate());
     AdsService.instance.init();
+    // Listen for images shared to this app (Share / Send with / Open with).
+    // If onboarding is showing, wait until it finishes (see onboarding_screen).
+    SharedImageService.instance.start();
+    if (widget.child is! OnboardingScreen) {
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => SharedImageService.instance.markReady());
+    }
   }
 
   Future<void> _checkForUpdate() async {

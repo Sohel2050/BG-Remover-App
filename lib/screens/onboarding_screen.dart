@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/prefs_service.dart';
 import 'home_screen.dart';
+import '../services/shared_image_service.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -44,6 +45,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const HomeScreen()),
     );
+    // If the app was opened via Share / Open with, handle that image now
+    SharedImageService.instance.markReady();
   }
 
   @override

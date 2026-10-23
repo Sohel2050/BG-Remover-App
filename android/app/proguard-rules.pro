@@ -83,3 +83,23 @@
 -keep class androidx.startup.** { *; }
 -dontwarn androidx.work.**
 -dontwarn androidx.room.**
+
+
+# --- Extra safety rules (only matter if R8 shrinking is turned on) ---
+# IAB Open Measurement SDK (used by Vungle, InMobi, Chartboost, Smaato, Mintegral...)
+-keep class com.iab.omid.library.** { *; }
+-dontwarn com.iab.omid.library.**
+# Mintegral resource ids (needed when shrinkResources is on)
+-keep class com.mbridge.** { *; }
+-dontwarn com.mbridge.**
+-keep class **.R$* { public static final int mbridge*; }
+# Common optional dependencies referenced by ad SDKs
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn org.jetbrains.annotations.**
+-dontwarn javax.annotation.**
+-dontwarn org.checkerframework.**
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn com.facebook.infer.annotation.**
+-dontwarn com.squareup.picasso.**
+-dontwarn com.google.android.play.core.**

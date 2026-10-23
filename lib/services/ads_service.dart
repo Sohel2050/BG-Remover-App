@@ -61,10 +61,17 @@ class AdsService {
     _interstitial!.setListener(
       _InterstitialListener(
         onClosed: _loadInterstitial,
+        onFailed: () => _retryLater(_loadInterstitial),
       ),
     );
 
     _interstitial!.loadAd();
+  }
+
+  /// After a failed load / display, try again later (no fill is common).
+  /// Without this, one failed load leaves the ad slot empty for the whole session.
+  void _retryLater(VoidCallback loader) {
+    Future.delayed(const Duration(seconds: 30), loader);
   }
 
   Future<bool> showInterstitial({
@@ -98,6 +105,7 @@ class AdsService {
           _pendingRewardCallback = null;
           _loadRewarded();
         },
+        onFailed: () => _retryLater(_loadRewarded),
       ),
     );
 
@@ -147,16 +155,20 @@ class _InitListener with LevelPlayInitListener {
 class _InterstitialListener
     with LevelPlayInterstitialAdListener {
   final VoidCallback onClosed;
+  final VoidCallback? onFailed;
 
   _InterstitialListener({
     required this.onClosed,
+    this.onFailed,
   });
 
   @override
   void onAdLoaded(LevelPlayAdInfo adInfo) {}
 
   @override
-  void onAdLoadFailed(LevelPlayAdError error) {}
+  void onAdLoadFailed(LevelPlayAdError error) {
+    onFailed?.call();
+  }
 
   @override
   void onAdDisplayed(LevelPlayAdInfo adInfo) {}
@@ -165,7 +177,9 @@ class _InterstitialListener
   void onAdDisplayFailed(
       LevelPlayAdError error,
       LevelPlayAdInfo adInfo,
-      ) {}
+      ) {
+    onFailed?.call();
+  }
 
   @override
   void onAdClicked(LevelPlayAdInfo adInfo) {}
@@ -184,16 +198,21 @@ class _RewardedListener
   final void Function(LevelPlayReward reward) onReward;
   final VoidCallback onClosed;
 
+  final VoidCallback? onFailed;
+
   _RewardedListener({
     required this.onReward,
     required this.onClosed,
+    this.onFailed,
   });
 
   @override
   void onAdLoaded(LevelPlayAdInfo adInfo) {}
 
   @override
-  void onAdLoadFailed(LevelPlayAdError error) {}
+  void onAdLoadFailed(LevelPlayAdError error) {
+    onFailed?.call();
+  }
 
   @override
   void onAdDisplayed(LevelPlayAdInfo adInfo) {}
@@ -202,7 +221,9 @@ class _RewardedListener
   void onAdDisplayFailed(
       LevelPlayAdError error,
       LevelPlayAdInfo adInfo,
-      ) {}
+      ) {
+    onFailed?.call();
+  }
 
   @override
   void onAdClicked(LevelPlayAdInfo adInfo) {}
