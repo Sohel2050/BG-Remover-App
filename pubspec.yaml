@@ -1,7 +1,7 @@
 name: bg_remover_app
 description: "AI background remover app (Flutter, on-device, free)"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.2+2
 
 environment:
   sdk: '>=3.3.0 <4.0.0'
